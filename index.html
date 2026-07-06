@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AirLink — Cable-free File Transfer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<meta name="theme-color" content="#050505">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="AirLink">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.js"></script>
+<style>
+  :root{
+    --ink: #ffffff;
+    --muted: rgba(255,255,255,0.55);
+    --glass: rgba(255,255,255,0.08);
+    --glass-strong: rgba(255,255,255,0.14);
+    --glass-line: rgba(255,255,255,0.18);
+    --ok: #86efac;
+    --warn: #fca5a5;
+    --bg0: #050505;
+  }
+  * { box-sizing: border-box; }
+  html, body{ height:100%; margin:0; }
+  body{
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Poppins', sans-serif;
+    padding:20px;
+    background: radial-gradient(circle at 30% 20%, #1c1c1c, var(--bg0) 65%);
+    color: var(--ink);
+  }
+  .app{
+    width: 400px;
+    background: var(--glass);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--glass-line);
+    border-radius: 28px;
+    padding: 26px 24px 28px;
+    box-shadow: 0 30px 70px -25px rgba(0,0,0,0.8);
+  }
+  .brand{
+    text-align:center;
+    margin-bottom: 18px;
+  }
+  .brand-name{ font-weight:700; font-size:18px; letter-spacing:0.5px; }
+  .brand-sub{ font-size:11px; color:var(--muted); letter-spacing:1px; text-transform:uppercase; margin-top:2px; }
+  .brand-maker{ font-size:10px; color:var(--muted); margin-top:6px; letter-spacing:0.3px; }
+
+  .tabs{
+    display:flex; gap:6px;
+    background: rgba(0,0,0,0.3);
+    border-radius:14px; padding:5px; margin-bottom:20px;
+  }
+  .tab{
+    flex:1; text-align:center; padding:9px 4px; font-size:13px; font-weight:500;
+    color:var(--muted); border-radius:10px; cursor:pointer;
+    transition: background .2s ease, color .2s ease; user-select:none;
+  }
+  .tab.active{ background: var(--glass-strong); color: var(--ink); }
+  .panel{ display:none; }
+  .panel.active{ display:block; animation: fadeIn .25s ease; }
+  @keyframes fadeIn{ from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:translateY(0);} }
+
+  .dropzone{
+    border: 1.5px dashed var(--glass-line);
+    border-radius: 18px;
+    padding: 30px 16px;
+    text-align:center;
+    cursor:pointer;
+    transition: background .15s ease, border-color .15s ease;
+  }
+  .dropzone:hover, .dropzone.drag{ background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.4); }
+  .dropzone-icon{ font-size:28px; margin-bottom:8px; }
+  .dropzone-text{ font-size:13px; color:var(--muted); }
+  .dropzone-limit{ font-size:11px; color:var(--muted); margin-top:6px; }
+  input[type="file"]{ display:none; }
+
+  .file-card{
+    background: rgba(0,0,0,0.25);
+    border-radius:16px;
+    padding:14px 16px;
+    display:flex; align-items:center; gap:12px;
+    margin-bottom:16px;
+  }
+  .file-icon{
+    width:38px; height:38px; border-radius:10px;
+    background: var(--glass-strong);
+    display:flex; align-items:center; justify-content:center;
+    font-size:16px; flex-shrink:0;
+  }
+  .file-meta{ flex:1; min-width:0; }
+  .file-name{ font-size:13px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .file-size{ font-size:11px; color:var(--muted); }
+  .file-remove{ color:var(--muted); cursor:pointer; font-size:18px; padding:2px 4px; }
+  .file-remove:hover{ color:var(--warn); }
+
+  .share-box{ text-align:center; }
+  .qr-wrap{
+    background:#fff; border-radius:16px; padding:14px;
+    display:inline-block; margin-bottom:16px;
+  }
+  .qr-wrap img{ display:block; width:180px; height:180px; }
+  .link-row{
+    display:flex; gap:8px; margin-bottom:16px;
+  }
+  .link-row input{
+    flex:1; background:rgba(0,0,0,0.25); border:1px solid var(--glass-line);
+    border-radius:12px; padding:10px 12px; color:var(--ink);
+    font-family:'Space Mono', monospace; font-size:11px;
+  }
+  .link-row input:focus{ outline:none; }
+  .copy-btn{
+    background: var(--ink); color:#111; border:none; border-radius:12px;
+    padding:0 16px; font-weight:600; font-size:12px; cursor:pointer;
+  }
+  .copy-btn:active{ transform: scale(0.96); }
+
+  .status-line{
+    font-size:12px; color:var(--muted); text-align:center; margin-bottom:14px;
+    display:flex; align-items:center; justify-content:center; gap:8px;
+  }
+  .dot{ width:7px; height:7px; border-radius:50%; background:var(--muted); }
+  .dot.wait{ background:#facc15; animation:pulse 1.2s ease infinite; }
+  .dot.live{ background: var(--ok); }
+  .dot.err{ background: var(--warn); }
+  @keyframes pulse{ 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+
+  .progress-wrap{ margin-bottom:14px; }
+  .progress-track{
+    background: rgba(0,0,0,0.35); border-radius:10px; height:10px; overflow:hidden;
+  }
+  .progress-fill{
+    height:100%; width:0%; background: var(--ink); border-radius:10px;
+    transition: width .15s ease;
+  }
+  .progress-info{
+    display:flex; justify-content:space-between; font-size:11px; color:var(--muted); margin-top:6px;
+  }
+
+  .btn{
+    width:100%; border:none; border-radius:14px; padding:13px 0;
+    font-family:'Poppins', sans-serif; font-weight:600; font-size:14px; cursor:pointer;
+    background: var(--glass-strong); color: var(--ink);
+    transition: transform .08s ease, background .15s ease;
+  }
+  .btn:hover{ background: rgba(255,255,255,0.22); }
+  .btn:active{ transform: scale(0.97); }
+  .btn.primary{ background: var(--ink); color:#111; }
+  .btn.primary:hover{ background:#eaeaea; }
+  .btn:disabled{ opacity:0.4; cursor:not-allowed; }
+
+  .receive-empty{ text-align:center; padding:24px 6px 10px; color:var(--muted); font-size:13px; }
+  .receive-empty .big{ font-size:30px; margin-bottom:10px; }
+  .scan-options{ display:flex; flex-direction:column; gap:10px; margin-top:20px; }
+  .scan-options input[type="file"]{ display:none; }
+  .qr-error{
+    margin-top:14px; background: rgba(252,165,165,0.12); color: var(--warn);
+    border-radius:12px; padding:10px 14px; font-size:12px; text-align:center;
+  }
+  .camera-wrap{
+    position:relative; width:100%; aspect-ratio:1/1; border-radius:18px;
+    overflow:hidden; background:#000;
+  }
+  .camera-wrap video{ width:100%; height:100%; object-fit:cover; }
+  .scan-frame{
+    position:absolute; inset:15%; border:2.5px solid rgba(255,255,255,0.8);
+    border-radius:16px; box-shadow: 0 0 0 999px rgba(0,0,0,0.35);
+    pointer-events:none;
+  }
+
+  .done-badge{
+    text-align:center; padding: 18px 0 6px;
+  }
+  .done-badge .check{
+    width:50px; height:50px; border-radius:50%; background: var(--ok);
+    color:#08300f; font-size:24px; font-weight:700;
+    display:flex; align-items:center; justify-content:center; margin:0 auto 12px;
+  }
+  .done-title{ font-weight:600; font-size:15px; margin-bottom:4px; }
+  .done-sub{ font-size:12px; color:var(--muted); }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="brand">
+    <div class="brand-name">AirLink</div>
+    <div class="brand-sub">Cable-free transfer</div>
+    <div class="brand-maker">Made by Shiranj . K . Parmar</div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="send">Send</div>
+    <div class="tab" data-tab="receive">Receive</div>
+  </div>
+
+  <!-- SEND PANEL -->
+  <div class="panel active" id="panel-send">
+
+    <div id="sendStep1">
+      <div class="dropzone" id="dropzone">
+        <div class="dropzone-icon">📤</div>
+        <div class="dropzone-text">Tap to choose a file, or drag it here</div>
+        <div class="dropzone-limit">Max size 10 GB · Deleted automatically after transfer</div>
+      </div>
+      <input type="file" id="fileInput">
+    </div>
+
+    <div id="sendStep2" style="display:none;">
+      <div class="file-card">
+        <div class="file-icon">📄</div>
+        <div class="file-meta">
+          <div class="file-name" id="fileName"></div>
+          <div class="file-size" id="fileSize"></div>
+        </div>
+        <div class="file-remove" id="fileRemove">&times;</div>
+      </div>
+
+      <div class="share-box" id="shareBox" style="display:none;">
+        <div class="qr-wrap"><img id="qrImg" alt="QR code"></div>
+        <div class="link-row">
+          <input type="text" id="linkText" readonly>
+          <button class="copy-btn" id="copyBtn">Copy</button>
+        </div>
+      </div>
+
+      <div class="status-line" id="sendStatus">
+        <div class="dot wait" id="sendDot"></div>
+        <span>Preparing secure link…</span>
+      </div>
+
+      <div class="progress-wrap" id="sendProgressWrap" style="display:none;">
+        <div class="progress-track"><div class="progress-fill" id="sendProgressFill"></div></div>
+        <div class="progress-info">
+          <span id="sendProgressPct">0%</span>
+          <span id="sendProgressSpeed"></span>
+        </div>
+      </div>
+
+      <button class="btn" id="cancelSendBtn">Cancel &amp; remove file</button>
+    </div>
+  </div>
+
+  <!-- RECEIVE PANEL -->
+  <div class="panel" id="panel-receive">
+    <div id="receiveEmpty" class="receive-empty">
+      <div class="big">📱</div>
+      Scan the sender's QR code, upload a photo of it, or open their link directly.
+
+      <div class="scan-options">
+        <button class="btn primary" id="scanCameraBtn">📷 Scan with camera</button>
+        <button class="btn" id="uploadQrBtn">🖼️ Upload QR image</button>
+        <input type="file" id="qrFileInput" accept="image/*">
+      </div>
+
+      <div class="qr-error" id="qrError" style="display:none;"></div>
+    </div>
+
+    <div id="cameraView" style="display:none;">
+      <div class="camera-wrap">
+        <video id="qrVideo" playsinline autoplay muted></video>
+        <div class="scan-frame"></div>
+      </div>
+      <button class="btn" id="closeCameraBtn" style="margin-top:12px;">Cancel</button>
+    </div>
+
+    <canvas id="qrCanvas" style="display:none;"></canvas>
+
+    <div id="receiveActive" style="display:none;">
+      <div class="status-line" id="recvStatus">
+        <div class="dot wait" id="recvDot"></div>
+        <span id="recvStatusText">Connecting to sender…</span>
+      </div>
+
+      <div class="file-card" id="recvFileCard" style="display:none;">
+        <div class="file-icon">📄</div>
+        <div class="file-meta">
+          <div class="file-name" id="recvFileName"></div>
+          <div class="file-size" id="recvFileSize"></div>
+        </div>
+      </div>
+
+      <div class="progress-wrap" id="recvProgressWrap" style="display:none;">
+        <div class="progress-track"><div class="progress-fill" id="recvProgressFill"></div></div>
+        <div class="progress-info">
+          <span id="recvProgressPct">0%</span>
+          <span id="recvProgressSpeed"></span>
+        </div>
+      </div>
+
+      <div class="done-badge" id="recvDone" style="display:none;">
+        <div class="check">✓</div>
+        <div class="done-title">Transfer complete</div>
+        <div class="done-sub">Your file is ready. It has been wiped from the sender — nothing was ever stored on a server.</div>
+        <button class="btn primary" id="recvDownloadBtn" style="margin-top:16px;">Download file</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const MAX_SIZE = 10 * 1024 * 1024 * 1024; // 10 GB
+  const CHUNK_SIZE = 1 * 1024 * 1024; // 1 MB per chunk — fewer messages, less overhead
+  const BUFFER_HIGH = 16 * 1024 * 1024; // pause sending once this much is queued
+  const BUFFER_LOW = 4 * 1024 * 1024;   // resume once queue drains to this
+
+  const tabs = document.querySelectorAll('.tab');
+  const panels = document.querySelectorAll('.panel');
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      tabs.forEach(t => t.classList.remove('active'));
+      panels.forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+    });
+  });
+
+  function formatBytes(bytes){
+    if (bytes === 0) return '0 B';
+    const units = ['B','KB','MB','GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return (bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1) + ' ' + units[i];
+  }
+
+  function formatSpeed(bytesPerSec){
+    return formatBytes(bytesPerSec) + '/s';
+  }
+
+  /* ============== SEND SIDE ============== */
+  const dropzone = document.getElementById('dropzone');
+  const fileInput = document.getElementById('fileInput');
+  const sendStep1 = document.getElementById('sendStep1');
+  const sendStep2 = document.getElementById('sendStep2');
+  const fileNameEl = document.getElementById('fileName');
+  const fileSizeEl = document.getElementById('fileSize');
+  const fileRemoveBtn = document.getElementById('fileRemove');
+  const shareBox = document.getElementById('shareBox');
+  const qrImg = document.getElementById('qrImg');
+  const linkText = document.getElementById('linkText');
+  const copyBtn = document.getElementById('copyBtn');
+  const sendStatus = document.getElementById('sendStatus');
+  const sendDot = document.getElementById('sendDot');
+  const sendProgressWrap = document.getElementById('sendProgressWrap');
+  const sendProgressFill = document.getElementById('sendProgressFill');
+  const sendProgressPct = document.getElementById('sendProgressPct');
+  const sendProgressSpeed = document.getElementById('sendProgressSpeed');
+  const cancelSendBtn = document.getElementById('cancelSendBtn');
+
+  let selectedFile = null;
+  let sendPeer = null;
+  let sendConn = null;
+
+  dropzone.addEventListener('click', () => fileInput.click());
+  ['dragover','dragenter'].forEach(evt => dropzone.addEventListener(evt, e => {
+    e.preventDefault(); dropzone.classList.add('drag');
+  }));
+  ['dragleave','drop'].forEach(evt => dropzone.addEventListener(evt, e => {
+    e.preventDefault(); dropzone.classList.remove('drag');
+  }));
+  dropzone.addEventListener('drop', e => {
+    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files.length) handleFile(fileInput.files[0]);
+  });
+
+  function handleFile(file){
+    if (file.size > MAX_SIZE){
+      alert('That file is larger than the 10 GB limit. Please choose a smaller file.');
+      return;
+    }
+    selectedFile = file;
+    fileNameEl.textContent = file.name;
+    fileSizeEl.textContent = formatBytes(file.size);
+    sendStep1.style.display = 'none';
+    sendStep2.style.display = 'block';
+    startHosting();
+  }
+
+  fileRemoveBtn.addEventListener('click', resetSend);
+  cancelSendBtn.addEventListener('click', resetSend);
+
+  function resetSend(){
+    if (sendConn) { try { sendConn.close(); } catch(e){} }
+    if (sendPeer) { try { sendPeer.destroy(); } catch(e){} }
+    sendConn = null; sendPeer = null; selectedFile = null;
+    fileInput.value = '';
+    sendStep1.style.display = 'block';
+    sendStep2.style.display = 'none';
+    shareBox.style.display = 'none';
+    sendProgressWrap.style.display = 'none';
+    sendProgressFill.style.width = '0%';
+    sendStatus.innerHTML = '<div class="dot wait" id="sendDot"></div><span>Preparing secure link…</span>';
+    cancelSendBtn.textContent = 'Cancel & remove file';
+  }
+
+  function startHosting(){
+    sendPeer = new Peer();
+
+    sendPeer.on('open', id => {
+      const url = new URL(window.location.href);
+      url.search = '';
+      url.searchParams.set('peer', id);
+      const link = url.toString();
+      linkText.value = link;
+      qrImg.src = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + encodeURIComponent(link);
+      shareBox.style.display = 'block';
+      sendStatus.innerHTML = '<div class="dot wait"></div><span>Waiting for the other device to connect…</span>';
+    });
+
+    sendPeer.on('connection', conn => {
+      sendConn = conn;
+      conn.on('open', () => {
+        sendStatus.innerHTML = '<div class="dot live"></div><span>Connected — sending file…</span>';
+        sendProgressWrap.style.display = 'block';
+        sendFile(conn);
+      });
+      conn.on('data', data => {
+        if (data === 'ack-complete'){
+          sendStatus.innerHTML = '<div class="dot live"></div><span>Transfer confirmed — file removed from memory</span>';
+          cancelSendBtn.textContent = 'Start a new transfer';
+          selectedFile = null; // drop reference, nothing was ever stored anywhere
+          setTimeout(() => { try { conn.close(); sendPeer.destroy(); } catch(e){} }, 500);
+        }
+      });
+      conn.on('close', () => {});
+    });
+
+    sendPeer.on('error', err => {
+      sendStatus.innerHTML = '<div class="dot err"></div><span>Connection error — please try again</span>';
+      console.error(err);
+    });
+  }
+
+  async function sendFile(conn){
+    const file = selectedFile;
+    conn.send({ type: 'meta', name: file.name, size: file.size, mime: file.type });
+
+    const dc = conn.dataChannel;
+    if (dc) dc.bufferedAmountLowThreshold = BUFFER_LOW;
+
+    let offset = 0;
+    const startTime = Date.now();
+    let lastUpdate = startTime;
+    let lastOffset = 0;
+
+    function waitForDrain(){
+      return new Promise(resolve => {
+        dc.addEventListener('bufferedamountlow', resolve, { once: true });
+      });
+    }
+
+    function reportProgress(){
+      const pct = Math.min(100, Math.round((offset / file.size) * 100));
+      sendProgressFill.style.width = pct + '%';
+      sendProgressPct.textContent = pct + '%';
+
+      const now = Date.now();
+      if (now - lastUpdate > 400){
+        const speed = ((offset - lastOffset) / ((now - lastUpdate) / 1000));
+        sendProgressSpeed.textContent = formatSpeed(speed);
+        lastUpdate = now;
+        lastOffset = offset;
+      }
+    }
+
+    while (offset < file.size){
+      if (dc && dc.bufferedAmount > BUFFER_HIGH){
+        await waitForDrain();
+      }
+      const end = Math.min(offset + CHUNK_SIZE, file.size);
+      const buffer = await file.slice(offset, end).arrayBuffer();
+      conn.send(buffer);
+      offset = end;
+      reportProgress();
+    }
+
+    conn.send({ type: 'done' });
+  }
+
+  copyBtn.addEventListener('click', () => {
+    linkText.select();
+    navigator.clipboard.writeText(linkText.value).then(() => {
+      copyBtn.textContent = 'Copied';
+      setTimeout(() => copyBtn.textContent = 'Copy', 1500);
+    }).catch(() => {
+      document.execCommand('copy');
+    });
+  });
+
+  /* ============== RECEIVE SIDE ============== */
+  const receiveEmpty = document.getElementById('receiveEmpty');
+  const receiveActive = document.getElementById('receiveActive');
+  const recvStatus = document.getElementById('recvStatus');
+  const recvStatusText = document.getElementById('recvStatusText');
+  const recvFileCard = document.getElementById('recvFileCard');
+  const recvFileName = document.getElementById('recvFileName');
+  const recvFileSize = document.getElementById('recvFileSize');
+  const recvProgressWrap = document.getElementById('recvProgressWrap');
+  const recvProgressFill = document.getElementById('recvProgressFill');
+  const recvProgressPct = document.getElementById('recvProgressPct');
+  const recvProgressSpeed = document.getElementById('recvProgressSpeed');
+  const recvDone = document.getElementById('recvDone');
+
+  const params = new URLSearchParams(window.location.search);
+  const remotePeerId = params.get('peer');
+
+  if (remotePeerId){
+    document.querySelector('.tab[data-tab="receive"]').click();
+    receiveEmpty.style.display = 'none';
+    receiveActive.style.display = 'block';
+    startReceiving(remotePeerId);
+  }
+
+  function extractPeerId(text){
+    try{
+      const url = new URL(text);
+      const id = url.searchParams.get('peer');
+      return id || null;
+    } catch(e){
+      return null;
+    }
+  }
+
+  function showQrError(msg){
+    qrError.textContent = msg;
+    qrError.style.display = 'block';
+    setTimeout(() => { qrError.style.display = 'none'; }, 3500);
+  }
+
+  function beginReceiveFlow(peerId){
+    qrError.style.display = 'none';
+    receiveEmpty.style.display = 'none';
+    receiveActive.style.display = 'block';
+    startReceiving(peerId);
+  }
+
+  /* ---- Camera scanning ---- */
+  const scanCameraBtn = document.getElementById('scanCameraBtn');
+  const closeCameraBtn = document.getElementById('closeCameraBtn');
+  const cameraView = document.getElementById('cameraView');
+  const qrVideo = document.getElementById('qrVideo');
+  const qrCanvas = document.getElementById('qrCanvas');
+  const qrError = document.getElementById('qrError');
+  let cameraStream = null;
+  let scanRAF = null;
+
+  scanCameraBtn.addEventListener('click', async () => {
+    try{
+      cameraStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' }
+      });
+      qrVideo.srcObject = cameraStream;
+      receiveEmpty.style.display = 'none';
+      cameraView.style.display = 'block';
+      qrVideo.onloadedmetadata = () => {
+        qrVideo.play();
+        scanLoop();
+      };
+    } catch(err){
+      showQrError('Camera access was blocked or unavailable. Try "Upload QR image" instead.');
+    }
+  });
+
+  function stopCamera(){
+    if (scanRAF) cancelAnimationFrame(scanRAF);
+    if (cameraStream){
+      cameraStream.getTracks().forEach(t => t.stop());
+      cameraStream = null;
+    }
+    cameraView.style.display = 'none';
+    receiveEmpty.style.display = 'block';
+  }
+
+  closeCameraBtn.addEventListener('click', stopCamera);
+
+  function scanLoop(){
+    if (!cameraStream) return;
+    const ctx = qrCanvas.getContext('2d');
+    if (qrVideo.videoWidth){
+      qrCanvas.width = qrVideo.videoWidth;
+      qrCanvas.height = qrVideo.videoHeight;
+      ctx.drawImage(qrVideo, 0, 0, qrCanvas.width, qrCanvas.height);
+      const imageData = ctx.getImageData(0, 0, qrCanvas.width, qrCanvas.height);
+      const code = jsQR(imageData.data, imageData.width, imageData.height);
+      if (code){
+        const peerId = extractPeerId(code.data);
+        if (peerId){
+          stopCamera();
+          beginReceiveFlow(peerId);
+          return;
+        } else {
+          showQrError('This is not a transfer QR code.');
+        }
+      }
+    }
+    scanRAF = requestAnimationFrame(scanLoop);
+  }
+
+  /* ---- QR image upload ---- */
+  const uploadQrBtn = document.getElementById('uploadQrBtn');
+  const qrFileInput = document.getElementById('qrFileInput');
+
+  uploadQrBtn.addEventListener('click', () => qrFileInput.click());
+
+  qrFileInput.addEventListener('change', () => {
+    const file = qrFileInput.files[0];
+    if (!file) return;
+    const img = new Image();
+    img.onload = () => {
+      const ctx = qrCanvas.getContext('2d');
+      qrCanvas.width = img.width;
+      qrCanvas.height = img.height;
+      ctx.drawImage(img, 0, 0);
+      const imageData = ctx.getImageData(0, 0, img.width, img.height);
+      const code = jsQR(imageData.data, imageData.width, imageData.height);
+      qrFileInput.value = '';
+      if (!code){
+        showQrError('This is not a QR code. Please upload a clear photo of the QR code.');
+        return;
+      }
+      const peerId = extractPeerId(code.data);
+      if (!peerId){
+        showQrError('This is not a transfer QR code.');
+        return;
+      }
+      beginReceiveFlow(peerId);
+    };
+    img.onerror = () => showQrError('This is not a QR code. Please upload a clear photo of the QR code.');
+    img.src = URL.createObjectURL(file);
+  });
+
+  function startReceiving(remoteId){
+    const peer = new Peer();
+    let meta = null;
+    let chunks = [];
+    let received = 0;
+    const startTime = Date.now();
+    let lastUpdate = startTime;
+    let lastReceived = 0;
+
+    peer.on('open', () => {
+      const conn = peer.connect(remoteId, { reliable: true });
+
+      conn.on('open', () => {
+        recvStatus.innerHTML = '<div class="dot live"></div><span id="recvStatusText">Connected — receiving file…</span>';
+      });
+
+      conn.on('data', data => {
+        if (data && data.type === 'meta'){
+          meta = data;
+          recvFileCard.style.display = 'flex';
+          recvFileName.textContent = meta.name;
+          recvFileSize.textContent = formatBytes(meta.size);
+          recvProgressWrap.style.display = 'block';
+          return;
+        }
+        if (data && data.type === 'done'){
+          const blob = new Blob(chunks, { type: meta.mime || 'application/octet-stream' });
+          const url = URL.createObjectURL(blob);
+
+          const downloadBtn = document.getElementById('recvDownloadBtn');
+          downloadBtn.onclick = () => {
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = meta.name;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+          };
+
+          conn.send('ack-complete');
+          recvProgressWrap.style.display = 'none';
+          recvDone.style.display = 'block';
+          recvStatus.style.display = 'none';
+
+          chunks = []; // clear the transfer buffer from memory once handed off to the blob
+          setTimeout(() => { try { conn.close(); peer.destroy(); } catch(e){} }, 600);
+          return;
+        }
+        // binary chunk
+        chunks.push(data);
+        received += data.byteLength || data.length || 0;
+        if (meta){
+          const pct = Math.min(100, Math.round((received / meta.size) * 100));
+          recvProgressFill.style.width = pct + '%';
+          recvProgressPct.textContent = pct + '%';
+
+          const now = Date.now();
+          if (now - lastUpdate > 400){
+            const speed = ((received - lastReceived) / ((now - lastUpdate) / 1000));
+            recvProgressSpeed.textContent = formatSpeed(speed);
+            lastUpdate = now;
+            lastReceived = received;
+          }
+        }
+      });
+
+      conn.on('error', err => {
+        recvStatus.innerHTML = '<div class="dot err"></div><span>Connection lost — ask the sender to refresh and try again</span>';
+        console.error(err);
+      });
+    });
+
+    peer.on('error', err => {
+      recvStatus.innerHTML = '<div class="dot err"></div><span>Could not connect — the sender may no longer be online</span>';
+      console.error(err);
+    });
+  }
+
+  if ('serviceWorker' in navigator){
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    });
+  }
+</script>
+
+</body>
+</html>
